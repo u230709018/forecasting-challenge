@@ -10,3 +10,12 @@ def test_rolling_origin_splits_are_temporal():
     assert len(splits) == 3
     assert splits[0].train_end < splits[0].validation_start
     assert splits[0].validation_end < splits[1].validation_start
+
+
+def test_default_params_give_no_splits_on_short_series():
+    frame = pd.DataFrame({
+        "timestamp": pd.date_range("2026-01-01", periods=110, freq="5min", tz="UTC")
+    })
+    splits = rolling_origin_splits(frame)
+    assert splits == []
+
