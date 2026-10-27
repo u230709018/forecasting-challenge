@@ -1,129 +1,88 @@
-# Cloud Workload Forecasting Challenge
+# Cloud Workload Forecasting — Submission
 
-AI/ML take-home challenge built from the **Microsoft Azure Public Dataset V2** VM trace.
+Forecasts the final 2 hours (24 five-minute steps) of `active_vm_count` and `aggregate_cpu_utilization` for a curated 10,000-VM subset of the Microsoft Azure Public Dataset V2.
 
-## Start here
+- **Final report:** [`reports/final_report.md`](reports/final_report.md)
+- **Predictions:** [`predictions.csv`](predictions.csv)
+- Original challenge: [`ASSIGNMENT.md`](ASSIGNMENT.md), [`DATASET.md`](DATASET.md), [`SUBMISSION.md`](SUBMISSION.md)
 
-1. Read [`ASSIGNMENT.md`](ASSIGNMENT.md).
-2. Read [`DATASET.md`](DATASET.md).
-3. Download the **`data-v1` GitHub Release** dataset and extract it as `challenge_data/`.
-4. Read [`SUBMISSION.md`](SUBMISSION.md).
-5. Implement your analysis and forecasting pipeline.
+## Quick start
 
-The challenge dataset is distributed as a versioned GitHub Release rather than committed to the repository. The `data-v1` release contains the fixed curated dataset used for this assignment.
-
-## Environment setup
-
-Python **3.11 or newer** is required.
-
-Create a virtual environment:
-
-### Linux / macOS
+Requires Python 3.11+.
 
 ```bash
-python3 -m venv .venv
+python -m venv .venv
+# Linux / macOS
 source .venv/bin/activate
-```
-
-### Windows PowerShell
-
-```powershell
-py -m venv .venv
+# Windows PowerShell
 .venv\Scripts\Activate.ps1
-```
 
-### Windows Command Prompt
-
-```cmd
-py -m venv .venv
-.venv\Scripts\activate.bat
-```
-
-Install the project and development dependencies:
-
-```bash
-python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-Verify the installation:
+On Windows, if `python` opens the Microsoft Store, create the environment with `py -3.12 -m venv .venv` (or your installed 3.11+ version).
+
+### Dataset
+
+Download `data-v1.tar.gz` from the [data-v1 release](https://github.com/atomityhq/forecasting-challenge/releases/tag/data-v1) and extract it into `challenge_data/`:
+
+```bash
+mkdir -p challenge_data
+tar -xzf data-v1.tar.gz -C challenge_data
+cd challenge_data && sha256sum -c SHA256SUMS && cd ..
+```
+
+`challenge_data/` is git-ignored; only its README is tracked.
+
+### Generate `predictions.csv` (one command)
+
+```bash
+python -m cwfc.predict --data challenge_data --output predictions.csv
+```
+
+`--data` is any folder containing `vm_cpu_readings.csv.gz`. The command builds the target series, splits off the last 24 timestamps as the holdout, fits the final model on the rest and writes 24 rows with the columns `timestamp,active_vm_count,aggregate_cpu_utilization`. There is no separate training step: the model is fitted inside this command.
+
+### Tests
 
 ```bash
 python -m pytest -q
 ```
 
-The repository includes a small test suite covering the starter forecasting utilities. Run it before beginning the assignment.
+23 tests, including an end-to-end smoke test that runs the CLI on a tiny dataset with churn, a missing value and an out-of-range value.
 
-## Dataset download
+## Repository layout
 
-The hiring dataset is distributed as the fixed `data-v1` release of this repository.
+| Path | Contents |
+|---|---|
+| `src/cwfc/targets.py` | `build_targets`: validity rule, per-timestamp VM count and mean CPU |
+| `src/cwfc/split.py` | `split_holdout`: the only code that touches the holdout; returns its timestamps only |
+| `src/cwfc/baselines.py` | persistence, mean (optionally windowed) and the final **decay** model |
+| `src/cwfc/evaluation.py` | `backtest`: rolling-origin evaluation (7 folds) with an empty-fold guard |
+| `src/cwfc/interval.py` | empirical prediction intervals from backtest residuals |
+| `src/cwfc/predict.py` | CLI that writes `predictions.csv` |
+| `src/cwfc/metrics.py`, `validation.py` | starter utilities (metrics, rolling-origin splits) |
+| `notebooks/01_data_audit.ipynb` | structure, coverage, quality, metadata, targets |
+| `notebooks/02_eda.ipynb` | trend, bump drivers, autocorrelation, per-VM distribution, segments |
+| `notebooks/03_baselines.ipynb` | baselines and decay on the rolling-origin folds |
+| `notebooks/04_holdout_evaluation.ipynb` | the single look at the holdout |
+| `notebooks/05_capacity.ipynb` | capacity margin trade-off |
+| `reports/` | final report and figures |
+| `tests/` | unit and smoke tests |
 
-**Download:** [Azure Dataset v1 Release](https://github.com/atomityhq/forecasting-challenge/releases/tag/data-v1)
+Run the notebooks from the `notebooks/` folder in numeric order; they read data from `../challenge_data/`.
 
-Download `data-v1.tar.gz` from the release and extract it into the repository as `challenge_data/`:
+## Main modelling decisions
 
-```bash
-mkdir -p challenge_data
-tar -xzf data-v1.tar.gz -C challenge_data
-```
+- **Targets:** a reading is valid if `timestamp`, `vm_id` and `avg_cpu` are present and `avg_cpu` is in [0, 100]; invalid rows are dropped (and counted in the log), never imputed. `active_vm_count` counts distinct VMs with a valid reading; `aggregate_cpu_utilization` is their mean `avg_cpu`.
+- **Leakage:** the holdout values are reachable only through `split_holdout`, which hands out timestamps only. No calendar features (the wall-clock time of 0 is unknown) and no lifetime metadata features (they summarise the holdout period too).
+- **Validation:** rolling-origin inside the 110-step training window, minimum training size 50, step 6, horizon 24 → 7 folds. The starter `rolling_origin_splits` defaults (1-day horizon, 7-day minimum) return no folds on this series; parameters are always explicit.
+- **Model:** decay, `forecast(h) = mean + (last − mean) × φ^h` with φ the lag-1 autocorrelation of the training data (0 if undefined or negative). Fold MAE 0.201 vs 0.215 for persistence and 0.209 for the mean. Counts are rounded to whole VMs; CPU is clipped to [0, 100].
+- **Capacity:** provision forecast + the q90 residual margin per horizon band (about 3–4% of the current level); q95 for Interactive workloads; a peak-risk trigger when the latest value exceeds the forecast. See section 8 of the report.
 
-The resulting layout is:
+## Use of AI assistance
 
-```text
-challenge_data/
-├── vm_cpu_readings.csv.gz
-├── vm_metadata.csv.gz
-├── DATA_CARD.md
-└── SHA256SUMS
-```
-
-Verify the dataset before starting the assignment:
-
-```bash
-cd challenge_data
-sha256sum -c SHA256SUMS
-```
-
-You should see:
-
-```text
-vm_cpu_readings.csv.gz: OK
-vm_metadata.csv.gz: OK
-DATA_CARD.md: OK
-```
-
-The release is a real, curated subset of the Microsoft Azure Public Dataset V2. It is not synthetic data.
-
-The dataset contains 10,000 VMs with 134 CPU measurements per VM at five-minute intervals, for a total of 1,340,000 CPU observations.
-
-Use the exact `data-v1` release provided for this assignment. Do not substitute another dataset or a different version of the Azure Public Dataset.
-
-## What you are solving
-
-The underlying data contains anonymized VM workload telemetry sampled every five minutes. Your job is to understand the workload and build a defensible forecasting pipeline for near-term aggregate demand.
-
-The challenge is intentionally open-ended. We evaluate reasoning, time-series methodology, leakage prevention, error analysis, reproducibility, and the quality of your operational conclusions—not just model complexity.
-
-## Expected environment
-
-Python 3.11+ is recommended.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-pytest -q
-```
-
-Model dependencies are intentionally not prescribed. Add only what you need and document them.
+This project was developed with AI assistance (Claude) for implementation and drafting. Problem framing, design decisions, analysis and the final model are my own, and I reviewed every part of the code and the report.
 
 ## Source
 
-Microsoft Azure Public Dataset V2:
-https://github.com/Azure/AzurePublicDataset
-
-The official V2 documentation describes a 30-day VM trace with five-minute CPU readings, VM metadata, and encrypted subscription/deployment/VM identifiers. The full upstream trace is much larger than this challenge release.
-
-## Submission
-
-Submit your work as a repository or archive according to [`SUBMISSION.md`](SUBMISSION.md).
+Microsoft Azure Public Dataset V2: https://github.com/Azure/AzurePublicDataset
