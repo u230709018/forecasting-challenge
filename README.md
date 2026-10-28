@@ -81,7 +81,7 @@ Run the notebooks from the `notebooks/` folder in numeric order; they read data 
 
 ## Use of AI assistance
 
-This project was developed with AI assistance (Claude) for implementation and drafting. Problem framing, design decisions, analysis and the final model are my own, and I reviewed every part of the code and the report.
+This project was developed with AI assistance (Claude). I made the design decisions (target definitions, leakage protection, validation setup, model choice, capacity policy), wrote the core pipeline functions (`build_targets`, `split_holdout`, the baselines and the decay model) and did the analysis. AI assistance was used for boilerplate code (the backtest loop, CLI, plotting and parts of the tests) and for drafting the report. I reviewed the code and the report.
 
 ## Source
 

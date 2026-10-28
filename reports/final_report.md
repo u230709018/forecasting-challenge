@@ -1,5 +1,7 @@
 # Forecasting Cloud Workload Demand — Final Report
 
+**Author:** Doğukan Ada Günter · AI/ML Engineering Intern take-home, Atomity · October 2026
+
 ## 1. Executive summary
 
 - **The workload is stable but not easy to beat.** Aggregate CPU across 10,000 Azure VMs stays in a narrow band around 9.4% over the 9-hour training window, with no trend. The largest deviation is a ~0.5-point bump between hours 4 and 6, driven by a small group of VMs: the top 1% of VMs by increase account for about 78% of it.
